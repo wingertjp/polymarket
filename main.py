@@ -560,6 +560,9 @@ async def snipe_market(client: ClobClient, mkt: Market) -> None:
                                 break
                             except Exception as e:
                                 log_order.error("order failed (attempt %d/3): %s: %s", attempt, type(e).__name__, e)
+                                # No point retrying hard rejections (balance, allowance, bad request)
+                                if getattr(e, "status_code", None) == 400:
+                                    break
                         else:
                             log_order.critical("LOSS  %-4s  all 3 attempts failed", outcome)
                         fired = True
