@@ -8,7 +8,9 @@ Usage:
 import argparse
 import os
 import sys
+import time
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from common import (
     CTF_ADDR,
@@ -70,6 +72,36 @@ def run_wallet_mode() -> None:
         trades = resp if isinstance(resp, list) else resp.get("data", [])
     except Exception as e:
         sys.exit(f"get_trades failed: {e}")
+
+    # ── Today's trade log ──────────────────────────────────────────────────────
+    today_start = int(time.time()) // 86400 * 86400  # midnight UTC
+
+    def _trade_ts(t) -> float:
+        raw = t.get("match_time") or t.get("created_at") or 0
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+
+    today_trades = [t for t in trades if _trade_ts(t) >= today_start]
+    today_trades.sort(key=_trade_ts)
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    print(f"  today ({today_str} UTC) — {len(today_trades)} trade(s)")
+    if today_trades:
+        print(f"  {'time':>5}  {'outcome':<7}  {'price':>6}  {'tokens':>8}  {'cost':>8}")
+        print("  " + "─" * 44)
+        today_cost = 0.0
+        for t in today_trades:
+            ts      = datetime.fromtimestamp(_trade_ts(t), tz=timezone.utc).strftime("%H:%M")
+            outcome = t.get("outcome", "?")
+            price   = float(t.get("price", 0) or 0)
+            size    = float(t.get("size",  0) or 0)
+            cost    = price * size
+            today_cost += cost
+            print(f"  {ts:>5}  {outcome:<7}  {price:>6.4f}  {size:>8.4f}  {cost:>8.4f}")
+        print(f"  {'':>5}  {'':7}  {'':6}  {'total:':>8}  {today_cost:>8.4f}")
+    print()
 
     # Aggregate cost and total tokens per (cid, asset_id) across ALL trades
     # cost = sum(price * size)  — USDC spent
