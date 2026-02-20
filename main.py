@@ -3,10 +3,12 @@ Polymarket BTC Up/Down 5-minute bot.
 
   python main.py data                        -- live order book TUI (no auth)
   python main.py snipe [--log-level LEVEL]   -- sniper (requires PRIVATE_KEY in .env)
+  python main.py wallet [--log-level LEVEL]  -- list on-chain CTF positions
 
 Or run modes directly:
   python data.py
   python snipe.py [--log-level LEVEL]
+  python wallet.py [--log-level LEVEL]
 """
 
 import argparse
@@ -17,7 +19,7 @@ from common import configure_logging
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Polymarket BTC Up/Down bot")
-    parser.add_argument("mode", choices=["data", "snipe"])
+    parser.add_argument("mode", choices=["data", "snipe", "wallet"])
     parser.add_argument(
         "--log-level",
         default=os.getenv("LOG_LEVEL", "INFO"),
@@ -35,6 +37,11 @@ def main() -> None:
         from common import build_client_l2
         from snipe import run_snipe_mode
         run_snipe_mode(build_client_l2())
+
+    elif args.mode == "wallet":
+        configure_logging(args.log_level)
+        from wallet import run_wallet_mode
+        run_wallet_mode()
 
 
 if __name__ == "__main__":
