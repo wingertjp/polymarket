@@ -478,7 +478,7 @@ async def snipe_market(client: ClobClient, mkt: Market) -> None:
                     book_snapshots += 1
                     bids_top = sorted(book[outcome]["bids"].items(), key=lambda x: float(x[0]), reverse=True)[:1]
                     asks_top = sorted(book[outcome]["asks"].items(), key=lambda x: float(x[0]))[:1]
-                    log_book.info(
+                    log_book.debug(
                         "snapshot #%d  %-4s  bids=%d  asks=%d  best_bid=%s  best_ask=%s",
                         msg_count, outcome,
                         len(book[outcome]["bids"]), len(book[outcome]["asks"]),
@@ -508,34 +508,15 @@ async def snipe_market(client: ClobClient, mkt: Market) -> None:
 
             # ── Subscription ack / keep-alive ──────────────────────────────
             elif isinstance(msg, dict) and ("market" in msg or "list" in msg):
-                log_ws.debug("#%d  ack/keep-alive: %s", msg_count, msg)
+                log_ws.debug("#%d  ack/keep-alive (dict): %s", msg_count, msg)
+
+            elif isinstance(msg, list):
+                log_ws.debug("#%d  ack/keep-alive (list, len=%d): %s", msg_count, len(msg), msg)
 
             else:
                 log_ws.warning("unhandled msg #%d  keys=%s",
                                msg_count,
                                list(msg.keys()) if isinstance(msg, dict) else type(msg).__name__)
-
-            # ── Mid calculation ─────────────────────────────────────────────
-            if updated:
-                in_window = remaining < SNIPE_TIME
-                up_bids   = _sorted_bids(book["Up"]["bids"])
-                up_asks   = _sorted_asks(book["Up"]["asks"])
-                down_bids = _sorted_bids(book["Down"]["bids"])
-                down_asks = _sorted_asks(book["Down"]["asks"])
-                for outcome, bids, asks, cb, ca in (
-                    ("Up",   up_bids,   up_asks,   down_bids, down_asks),
-                    ("Down", down_bids, down_asks, up_bids,   up_asks),
-                ):
-                    mid, src = _compute_mid(bids, asks, cb, ca)
-                    if mid is not None:
-                        # INFO when inside snipe window (actionable); DEBUG otherwise
-                        mid_log = log.info if in_window else log.debug
-                        mid_log(
-                            "mid  %-4s  %.4f  src=%-10s  remaining=%.1fs  in_snipe_window=%s",
-                            outcome, mid, src, remaining, in_window,
-                        )
-                    else:
-                        log.warning("mid  %-4s  no price data at all", outcome)
 
             # ── Snipe trigger ───────────────────────────────────────────────
             if updated and remaining < SNIPE_TIME:
