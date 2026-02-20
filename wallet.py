@@ -27,7 +27,7 @@ def _ctf_balance(wallet: str, asset_id: int) -> int:
 def _position_status(cid: str, outcome: str, balance: int, denom: int) -> str:
     """Determine the status string for a position."""
     if denom == 0:
-        return "active" if balance > 0 else "active (empty)"
+        return "active"
 
     # Market resolved — check if this outcome won
     try:
@@ -35,7 +35,8 @@ def _position_status(cid: str, outcome: str, balance: int, denom: int) -> str:
         up_num = int(eth_call(CTF_ADDR, sel_pn + cid[2:].zfill(64) + "0" * 64), 16)
         dn_num = int(eth_call(CTF_ADDR, sel_pn + cid[2:].zfill(64) + hex(1)[2:].zfill(64)), 16)
         won = (outcome == "Up" and up_num == denom) or (outcome == "Down" and dn_num == denom)
-    except Exception:
+    except Exception as e:
+        log.warning("payoutNumerators failed  cid=%s…  outcome=%s: %s", cid[:12], outcome, e)
         won = False
 
     if balance > 0 and won:
@@ -111,7 +112,7 @@ def run_wallet_mode() -> None:
         })
 
     # Sort: redeemable first, then active, then lost, then redeemed
-    _order = {"redeemable ✓": 0, "active": 1, "active (empty)": 2, "lost": 3, "redeemed": 4}
+    _order = {"redeemable ✓": 0, "active": 1, "lost": 2, "redeemed": 3}
     rows.sort(key=lambda r: _order.get(r["status"], 9))
 
     # Only show positions with a non-zero balance (skip fully-settled zero-balance)
@@ -129,7 +130,7 @@ def run_wallet_mode() -> None:
 
     # Summary counts
     n_redeemable = sum(1 for r in rows if r["status"] == "redeemable ✓")
-    n_active     = sum(1 for r in rows if "active" in r["status"])
+    n_active     = sum(1 for r in rows if r["status"] == "active")
     n_lost       = sum(1 for r in rows if r["status"] == "lost")
     n_redeemed   = sum(1 for r in rows if r["status"] == "redeemed")
 
