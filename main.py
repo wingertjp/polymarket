@@ -546,10 +546,22 @@ async def snipe_market(client: ClobClient, mkt: Market) -> None:
                                 )
                                 log_order.info("order created: %s", order)
                                 resp = client.post_order(order, OrderType.FOK)
-                                log_order.info("order response (attempt %d/3): %s", attempt, resp)
+                                status = resp.get("status", "") if isinstance(resp, dict) else ""
+                                if status == "matched":
+                                    log_order.critical(
+                                        "WIN  %-4s  filled  attempt=%d/3  orderID=%s",
+                                        outcome, attempt, resp.get("orderID", "?"),
+                                    )
+                                else:
+                                    log_order.critical(
+                                        "LOSS  %-4s  not filled  attempt=%d/3  status=%s  resp=%s",
+                                        outcome, attempt, status or "?", resp,
+                                    )
                                 break
                             except Exception as e:
                                 log_order.error("order failed (attempt %d/3): %s: %s", attempt, type(e).__name__, e)
+                        else:
+                            log_order.critical("LOSS  %-4s  all 3 attempts failed", outcome)
                         fired = True
                         return  # one bet per window — done
 
