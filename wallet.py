@@ -8,6 +8,7 @@ Usage:
 import argparse
 import os
 import sys
+from collections import defaultdict
 
 from common import (
     CTF_ADDR,
@@ -24,10 +25,13 @@ def _ctf_balance(wallet: str, asset_id: int) -> int:
     return int(eth_call(CTF_ADDR, "0x00fdd58e" + addr_padded + tid_padded), 16)
 
 
-def _position_status(cid: str, outcome: str, balance: int, denom: int) -> str:
-    """Determine the status string for a position."""
+def _position_status(cid: str, outcome: str, balance: int, denom: int) -> tuple[str, bool | None]:
+    """
+    Returns (status, won).
+    won = True/False for resolved positions, None for active ones.
+    """
     if denom == 0:
-        return "active"
+        return "active", None
 
     # Market resolved — check if this outcome won
     try:
@@ -40,13 +44,13 @@ def _position_status(cid: str, outcome: str, balance: int, denom: int) -> str:
         won = False
 
     if balance > 0 and won:
-        return "redeemable ✓"
+        return "redeemable ✓", True
     elif balance > 0:
-        return "lost"
+        return "lost", False
     elif won:
-        return "redeemed"
+        return "redeemed", True
     else:
-        return "lost"
+        return "lost", False
 
 
 def run_wallet_mode() -> None:
@@ -67,7 +71,21 @@ def run_wallet_mode() -> None:
     except Exception as e:
         sys.exit(f"get_trades failed: {e}")
 
-    # Deduplicate by (cid, asset_id)
+    # Aggregate cost and total tokens per (cid, asset_id) across ALL trades
+    # cost = sum(price * size)  — USDC spent
+    # tokens = sum(size)        — outcome tokens acquired (each redeems for 1 USDC if won)
+    cost_map   = defaultdict(float)  # key -> total USDC spent
+    tokens_map = defaultdict(float)  # key -> total outcome tokens acquired
+    for t in trades:
+        key = (t.get("market", ""), t.get("asset_id", ""))
+        if not all(key):
+            continue
+        price = float(t.get("price", 0) or 0)
+        size  = float(t.get("size",  0) or 0)
+        cost_map[key]   += price * size
+        tokens_map[key] += size
+
+    # Deduplicate by (cid, asset_id) for on-chain queries
     seen, candidates = set(), []
     for t in trades:
         key = (t.get("market", ""), t.get("asset_id", ""))
@@ -89,6 +107,7 @@ def run_wallet_mode() -> None:
         cid      = t["market"]
         asset_id = int(t["asset_id"])
         outcome  = t.get("outcome", "?")
+        key      = (cid, t["asset_id"])  # string key, matches cost_map
 
         try:
             balance = _ctf_balance(wallet, asset_id)
@@ -102,12 +121,29 @@ def run_wallet_mode() -> None:
             log.warning("payoutDenominator failed  cid=%s…: %s", cid[:12], e)
             denom = 0
 
-        status = _position_status(cid, outcome, balance, denom)
+        status, won  = _position_status(cid, outcome, balance, denom)
+        balance_usdc = balance / 1e6
+        cost         = cost_map.get(key, 0.0)
+        total_tokens = tokens_map.get(key, 0.0)
+
+        # PnL calculation
+        if won is None:
+            pnl = None                              # active — unrealized
+        elif won and balance > 0:
+            pnl = balance_usdc - cost               # redeemable: current value minus cost
+        elif won and balance == 0:
+            pnl = total_tokens - cost               # redeemed: tokens acquired minus cost
+        else:
+            pnl = -cost                             # lost: full loss
+
         rows.append({
             "cid":         cid,
             "outcome":     outcome,
-            "balance":     balance / 1e6,
+            "balance":     balance_usdc,
             "balance_raw": balance,
+            "cost":        cost,
+            "pnl":         pnl,
+            "won":         won,
             "status":      status,
         })
 
@@ -118,25 +154,40 @@ def run_wallet_mode() -> None:
     # Only show positions with a non-zero balance (skip fully-settled zero-balance)
     visible = [r for r in rows if r["balance_raw"] > 0]
 
+    def _pnl_str(pnl: float | None) -> str:
+        if pnl is None:
+            return "—"
+        return f"{pnl:+.4f}"
+
     if not visible:
         print("no open positions")
     else:
         cid_w = 14
-        print(f"  {'cid':<{cid_w}}  {'outcome':<7}  {'balance':>9}  status")
-        print("  " + "─" * (cid_w + 32))
+        print(f"  {'cid':<{cid_w}}  {'outcome':<7}  {'balance':>9}  {'cost':>8}  {'pnl':>9}  status")
+        print("  " + "─" * (cid_w + 52))
         for r in visible:
             cid_short = r["cid"][:cid_w - 1] + "…"
-            print(f"  {cid_short:<{cid_w}}  {r['outcome']:<7}  {r['balance']:>9.4f}  {r['status']}")
+            print(f"  {cid_short:<{cid_w}}  {r['outcome']:<7}  {r['balance']:>9.4f}"
+                  f"  {r['cost']:>8.4f}  {_pnl_str(r['pnl']):>9}  {r['status']}")
 
     # Summary counts
     n_redeemable = sum(1 for r in rows if r["status"] == "redeemable ✓")
     n_active     = sum(1 for r in rows if r["status"] == "active")
     n_lost       = sum(1 for r in rows if r["status"] == "lost")
     n_redeemed   = sum(1 for r in rows if r["status"] == "redeemed")
+    n_resolved   = n_redeemable + n_lost + n_redeemed
+
+    realized_pnl = sum(r["pnl"] for r in rows if r["pnl"] is not None)
+    winrate_str  = (
+        f"{n_redeemable + n_redeemed}/{n_resolved} "
+        f"({(n_redeemable + n_redeemed) / n_resolved * 100:.0f}%)"
+        if n_resolved else "n/a"
+    )
 
     print()
     print(f"  {len(rows)} position(s)  "
           f"({n_redeemable} redeemable  {n_active} active  {n_lost} lost  {n_redeemed} redeemed)")
+    print(f"  winrate: {winrate_str}  |  realized PnL: {realized_pnl:+.4f} USDC")
     print(f"  USDC.e balance: {usdc_e_balance(wallet):.4f}")
     print()
 
