@@ -183,8 +183,8 @@ def run_wallet_mode() -> None:
     _order = {"redeemable ✓": 0, "active": 1, "lost": 2, "redeemed": 3}
     rows.sort(key=lambda r: _order.get(r["status"], 9))
 
-    # Only show positions with a non-zero balance (skip fully-settled zero-balance)
-    visible = [r for r in rows if r["balance_raw"] > 0]
+    # Show: positions with balance, plus lost positions (even if balance=0 after burning)
+    visible = [r for r in rows if r["balance_raw"] > 0 or r["status"] == "lost"]
 
     def _pnl_str(pnl: float | None) -> str:
         if pnl is None:
