@@ -8,6 +8,7 @@ Usage:
 import argparse
 import os
 import sys
+import time
 from collections import defaultdict
 
 from common import (
@@ -61,12 +62,18 @@ def run_wallet_mode() -> None:
     account = Account.from_key(private_key)
     wallet  = account.address
 
-    print(f"\nwallet: {wallet}\n")
+    from datetime import datetime, timezone
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    print(f"\nwallet: {wallet}  (today: {today_str} UTC)\n")
 
     client = build_client_l2()
 
+    # Only fetch trades from today (00:00:00 UTC)
+    from py_clob_client.clob_types import TradeParams
+    today_start = int(time.time()) // 86400 * 86400  # midnight UTC
+
     try:
-        resp   = client.get_trades()
+        resp   = client.get_trades(TradeParams(after=today_start))
         trades = resp if isinstance(resp, list) else resp.get("data", [])
     except Exception as e:
         sys.exit(f"get_trades failed: {e}")
