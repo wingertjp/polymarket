@@ -32,7 +32,8 @@ def main() -> None:
 
     elif args.mode == "snipe":
         configure_logging(args.log_level)
-        from snipe import build_client_l2, run_snipe_mode
+        from common import build_client_l2
+        from snipe import run_snipe_mode
         run_snipe_mode(build_client_l2())
 
 

@@ -13,10 +13,9 @@ import time
 import websockets
 
 from common import (
-    HOST, WS_URL,
+    WS_URL,
     SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME,
-    RPC_URL, USDC_E, CTF_ADDR,
-    log, log_ws, log_book, log_order, log_redeem,
+    log, log_ws, log_book, log_order,
     configure_logging, fetch_active_market,
     sorted_bids, sorted_asks, compute_mid,
     ClobClient,
