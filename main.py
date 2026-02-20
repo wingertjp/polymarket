@@ -507,8 +507,8 @@ async def snipe_market(client: ClobClient, mkt: Market) -> None:
                     updated = True
 
             # ── Subscription ack / keep-alive ──────────────────────────────
-            elif isinstance(msg, dict) and "market" in msg:
-                log_ws.debug("#%d  market ack/keep-alive: %s", msg_count, msg)
+            elif isinstance(msg, dict) and ("market" in msg or "list" in msg):
+                log_ws.debug("#%d  ack/keep-alive: %s", msg_count, msg)
 
             else:
                 log_ws.warning("unhandled msg #%d  keys=%s",
