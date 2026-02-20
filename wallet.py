@@ -103,12 +103,16 @@ def run_wallet_mode() -> None:
         print(f"  {'':>5}  {'':7}  {'':6}  {'total:':>8}  {today_cost:>8.4f}")
     print()
 
-    # Aggregate cost and total tokens per (cid, asset_id) across ALL trades
+    if not today_trades:
+        print(f"  USDC.e balance: {usdc_e_balance(wallet):.4f}\n")
+        return
+
+    # Aggregate cost and total tokens per (cid, asset_id) — today only
     # cost = sum(price * size)  — USDC spent
     # tokens = sum(size)        — outcome tokens acquired (each redeems for 1 USDC if won)
-    cost_map   = defaultdict(float)  # key -> total USDC spent
-    tokens_map = defaultdict(float)  # key -> total outcome tokens acquired
-    for t in trades:
+    cost_map   = defaultdict(float)
+    tokens_map = defaultdict(float)
+    for t in today_trades:
         key = (t.get("market", ""), t.get("asset_id", ""))
         if not all(key):
             continue
@@ -117,18 +121,14 @@ def run_wallet_mode() -> None:
         cost_map[key]   += price * size
         tokens_map[key] += size
 
-    # Deduplicate by (cid, asset_id) for on-chain queries
+    # Deduplicate by (cid, asset_id) for on-chain queries — today only
     seen, candidates = set(), []
-    for t in trades:
+    for t in today_trades:
         key = (t.get("market", ""), t.get("asset_id", ""))
         if key in seen or not all(key):
             continue
         seen.add(key)
         candidates.append(t)
-
-    if not candidates:
-        print("no trades found")
-        return
 
     sel_pd = abi_sel("payoutDenominator(bytes32)")
     rows   = []
