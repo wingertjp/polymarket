@@ -433,6 +433,7 @@ async def snipe_market(client: ClobClient, mkt: Market) -> None:
     msg_count         = 0
     book_snapshots    = 0
     price_change_msgs = 0
+    fired             = False  # one bet per window
 
     log.info(
         "watching  %r  end_ts=%s  (~%ds)  trigger: mid>=%.2f AND remaining<%ds",
@@ -519,7 +520,7 @@ async def snipe_market(client: ClobClient, mkt: Market) -> None:
                                list(msg.keys()) if isinstance(msg, dict) else type(msg).__name__)
 
             # ── Snipe trigger ───────────────────────────────────────────────
-            if updated and remaining < SNIPE_TIME:
+            if updated and remaining < SNIPE_TIME and not fired:
                 up_bids   = _sorted_bids(book["Up"]["bids"])
                 up_asks   = _sorted_asks(book["Up"]["asks"])
                 down_bids = _sorted_bids(book["Down"]["bids"])
@@ -538,15 +539,19 @@ async def snipe_market(client: ClobClient, mkt: Market) -> None:
                             "FIRE  %-4s  mid=%.4f (src=%s) >= %.2f  remaining=%.1fs  amount=%s USDC  token=%s…",
                             outcome, mid, src, SNIPE_PROB, remaining, SNIPE_AMOUNT, token_id[:16],
                         )
-                        try:
-                            order = client.create_market_order(
-                                MarketOrderArgs(token_id=token_id, amount=SNIPE_AMOUNT, side=BUY)
-                            )
-                            log_order.info("order created: %s", order)
-                            resp = client.post_order(order, OrderType.FOK)
-                            log_order.info("order response: %s", resp)
-                        except Exception as e:
-                            log_order.error("order failed: %s: %s", type(e).__name__, e)
+                        for attempt in range(1, 4):
+                            try:
+                                order = client.create_market_order(
+                                    MarketOrderArgs(token_id=token_id, amount=SNIPE_AMOUNT, side=BUY)
+                                )
+                                log_order.info("order created: %s", order)
+                                resp = client.post_order(order, OrderType.FOK)
+                                log_order.info("order response (attempt %d/3): %s", attempt, resp)
+                                break
+                            except Exception as e:
+                                log_order.error("order failed (attempt %d/3): %s: %s", attempt, type(e).__name__, e)
+                        fired = True
+                        return  # one bet per window — done
 
 
 def run_snipe_mode(client: ClobClient) -> None:
@@ -566,6 +571,13 @@ def run_snipe_mode(client: ClobClient) -> None:
 
             last_cid = mkt.condition_id
             asyncio.run(snipe_market(client, mkt))
+
+            # If snipe_market returned early (e.g. after firing), wait until
+            # the window actually expires so the next slug is available.
+            remaining = mkt.end_ts - time.time()
+            if remaining > 0:
+                log.info("window not yet expired — waiting %.0fs for next window", remaining)
+                time.sleep(remaining)
 
         except KeyboardInterrupt:
             log.info("stopped by user")
