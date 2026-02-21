@@ -23,8 +23,9 @@ MARKET_SLUG = os.getenv("MARKET_SLUG", "btc-updown-5m")
 SNIPE_AMOUNT  = float(os.getenv("SNIPE_AMOUNT",  "1.0"))    # USDC per trade
 SNIPE_PROB    = float(os.getenv("SNIPE_PROB",   "0.95"))   # midpoint threshold to trigger buy
 SNIPE_TIME    = int(os.getenv("SNIPE_TIME",     "120"))    # only trigger if < 2 min remaining
-RESCUE_TIME   = int(os.getenv("RESCUE_TIME",    "15"))     # rescue window: last N seconds
-DRY_RUN       = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
+RESCUE_TIME          = int(os.getenv("RESCUE_TIME",          "15"))    # rescue window: last N seconds
+RESCUE_OBI_THRESHOLD = float(os.getenv("RESCUE_OBI_THRESHOLD", "0.30"))  # min OBI to trigger rescue
+DRY_RUN              = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
 
 # On-chain redemption (Polygon)
 RPC_URL  = os.getenv("RPC_URL", "https://polygon-bor-rpc.publicnode.com")

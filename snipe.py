@@ -15,7 +15,7 @@ import websockets
 from binance_signal import BinancePriceSignal
 from common import (
     WS_URL,
-    SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME, RESCUE_TIME, DRY_RUN,
+    SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME, RESCUE_TIME, RESCUE_OBI_THRESHOLD, DRY_RUN,
     log, log_ws, log_book, log_order,
     configure_logging, fetch_active_market,
     sorted_bids, sorted_asks, compute_mid,
@@ -103,7 +103,7 @@ async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> Non
     rescue_token_id:  str | None = None   # opposite token to buy on rescue
     rescued           = False
 
-    signal = BinancePriceSignal()
+    signal = BinancePriceSignal(obi_threshold=RESCUE_OBI_THRESHOLD)
     await signal.start()
     log.info("binance signal started  mode=%s", "DRY RUN" if dry_run else "LIVE")
 
