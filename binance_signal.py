@@ -15,7 +15,7 @@ import websockets
 
 _STREAM_URL = (
     "wss://stream.binance.com:9443/stream"
-    "?streams=btcusdt@depth5@100ms/btcusdt@aggTrade"
+    "?streams=btcusdt@depth5@100ms/btcusdt@aggTrade/btcusdt@kline_5m"
 )
 
 # Kalman tuning
@@ -49,6 +49,7 @@ class BinancePriceSignal:
         self._obi: float = 0.0
         self._velocity: float = 0.0   # USD / second
         self._last_trade_ts_ms: float = 0.0
+        self._candle_open: float = 0.0
 
         self._task: asyncio.Task | None = None
 
@@ -68,6 +69,11 @@ class BinancePriceSignal:
     def velocity(self) -> float:
         """Rate of price change (USD / second). Positive = rising."""
         return self._velocity
+
+    @property
+    def candle_open(self) -> float:
+        """Open price of the current 5-minute BTC candle (0.0 until first kline received)."""
+        return self._candle_open
 
     @property
     def direction(self) -> str | None:
@@ -108,6 +114,8 @@ class BinancePriceSignal:
                             self._on_depth(data)
                         elif "aggTrade" in stream:
                             self._on_trade(data)
+                        elif "kline" in stream:
+                            self._on_kline(data)
             except asyncio.CancelledError:
                 return
             except Exception:
@@ -143,6 +151,11 @@ class BinancePriceSignal:
         dt_s = (ts_ms - self._last_trade_ts_ms) / 1000.0
         self._velocity = (self._kf_x - old_x) / max(dt_s, 0.001)
         self._last_trade_ts_ms = ts_ms
+
+    def _on_kline(self, data: dict) -> None:
+        """Track the 5-minute candle open price."""
+        k = data.get("k", {})
+        self._candle_open = float(k.get("o", 0))
 
     def _kalman_update(self, measurement: float) -> float:
         self._kf_p += _KF_Q

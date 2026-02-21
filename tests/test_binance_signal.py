@@ -102,3 +102,16 @@ def test_velocity_negative_when_price_falling():
     signal._on_trade({"p": "50100.0", "q": "0.1", "m": False, "T": t0})
     signal._on_trade({"p": "50000.0", "q": "0.1", "m": False, "T": t0 + 1000})
     assert signal.velocity < 0
+
+
+# ── Kline (candle open) ──────────────────────────────────────────────────────
+
+def test_candle_open_updated_from_kline():
+    signal = BinancePriceSignal()
+    signal._on_kline({"k": {"o": "50000.0", "c": "50100.0", "x": False}})
+    assert signal.candle_open == pytest.approx(50000.0)
+
+
+def test_candle_open_unchanged_before_first_kline():
+    signal = BinancePriceSignal()
+    assert signal.candle_open == 0.0

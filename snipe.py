@@ -26,6 +26,50 @@ from py_clob_client.clob_types import MarketOrderArgs, OrderType
 from py_clob_client.order_builder.constants import BUY
 
 
+# ── Dry run outcome helpers ─────────────────────────────────────────────────────
+
+def _bet_result(initial_outcome: str, open_price: float, close_price: float) -> str:
+    """Return 'WIN' or 'LOSS' for the simulated bet."""
+    actual_up = close_price > open_price
+    won = actual_up if initial_outcome == "Up" else not actual_up
+    return "WIN" if won else "LOSS"
+
+
+def _log_dry_run_outcome(
+    initial_outcome: str | None,
+    rescued: bool,
+    signal: "BinancePriceSignal",
+) -> None:
+    if initial_outcome is None:
+        log_order.warning("[DRY RUN] window ended — no snipe was triggered")
+        return
+
+    open_price  = signal.candle_open
+    close_price = signal.price
+
+    if open_price == 0.0:
+        log_order.warning("[DRY RUN] outcome unavailable — candle open price not received yet")
+        return
+
+    actual = "UP" if close_price > open_price else "DOWN"
+    initial_result = _bet_result(initial_outcome, open_price, close_price)
+
+    if not rescued:
+        log_order.critical(
+            "[DRY RUN] OUTCOME  bet=%-4s  open=%.2f  close=%.2f  actual=%-4s  result=%s",
+            initial_outcome, open_price, close_price, actual, initial_result,
+        )
+    else:
+        rescue_outcome = "Down" if initial_outcome == "Up" else "Up"
+        rescue_result  = _bet_result(rescue_outcome, open_price, close_price)
+        log_order.critical(
+            "[DRY RUN] OUTCOME  bet=%-4s  open=%.2f  close=%.2f  actual=%-4s"
+            "  initial=%s  rescue=%s",
+            initial_outcome, open_price, close_price, actual,
+            initial_result, rescue_result,
+        )
+
+
 # ── Rescue helper ──────────────────────────────────────────────────────────────
 
 def should_rescue(
@@ -75,6 +119,8 @@ async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> Non
         if remaining <= 0:
             log_ws.info("window expired  msgs=%d (snapshots=%d updates=%d)",
                         msg_count, book_snapshots, price_change_msgs)
+            if dry_run:
+                _log_dry_run_outcome(initial_outcome, rescued, signal)
             return
 
         try:
@@ -89,11 +135,15 @@ async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> Non
                     if remaining <= 0:
                         log_ws.info("window expired  msgs=%d (snapshots=%d updates=%d)",
                                     msg_count, book_snapshots, price_change_msgs)
+                        if dry_run:
+                            _log_dry_run_outcome(initial_outcome, rescued, signal)
                         return
 
                     try:
                         raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
                     except asyncio.TimeoutError:
+                        if dry_run:
+                            _log_dry_run_outcome(initial_outcome, rescued, signal)
                         return
 
                     msg_count += 1
