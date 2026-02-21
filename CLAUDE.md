@@ -118,3 +118,65 @@ indexSets          = [2] pour Up (idx=1), [4] pour Down (idx=2)
 
 ### Fréquence recommandée
 Vérifier manuellement après chaque session de snipe, ou automatiser via un script de redemption (voir l'historique de session pour l'implémentation complète).
+
+## Déploiement sur moulinettes.fr
+
+### Serveur
+- Hôte : `ubuntu@moulinettes.fr`
+- SSH configuré dans `~/.ssh/config` — pas besoin de `-i`
+- Podman rootless (v4.9.3) + podman-compose (v1.0.6)
+- Projet : `/home/ubuntu/workspace/polymarket`
+
+### Premier déploiement (one-time)
+
+```bash
+# 1. Cloner le repo
+ssh moulinettes.fr "mkdir -p /home/ubuntu/workspace && cd /home/ubuntu/workspace && git clone https://github.com/wingertjp/polymarket.git"
+
+# 2. Copier le .env (jamais commité dans git)
+scp .env moulinettes.fr:/home/ubuntu/workspace/polymarket/.env
+
+# 3. Build et démarrage
+ssh moulinettes.fr "cd /home/ubuntu/workspace/polymarket && podman-compose build && podman-compose up -d"
+```
+
+### Mise à jour du code
+
+```bash
+# Pousser localement puis puller sur le serveur
+git push
+ssh moulinettes.fr "cd /home/ubuntu/workspace/polymarket && git pull"
+
+# Si le code change (rebuild nécessaire)
+ssh moulinettes.fr "cd /home/ubuntu/workspace/polymarket && podman-compose build && podman-compose down && podman-compose up -d"
+```
+
+### Commandes courantes
+
+```bash
+# Statut des containers
+ssh moulinettes.fr "podman ps"
+
+# Logs en temps réel
+ssh moulinettes.fr "podman logs -f polymarket_snipe_1"
+ssh moulinettes.fr "podman logs -f polymarket_redeem_1"
+
+# Arrêter / redémarrer
+ssh moulinettes.fr "cd /home/ubuntu/workspace/polymarket && podman-compose down"
+ssh moulinettes.fr "cd /home/ubuntu/workspace/polymarket && podman-compose up -d"
+```
+
+### Fichiers de configuration
+
+| Fichier | Rôle |
+|---|---|
+| `Containerfile` | Image Python 3.12-slim avec dépendances |
+| `compose.yaml` | Services `snipe` et `redeem`, `restart: unless-stopped` |
+| `.containerignore` | Exclut `.env`, `.venv`, `__pycache__` du build |
+| `.env` | `PRIVATE_KEY` — **jamais commité**, à copier via `scp` |
+
+### Règle importante
+`.env` n'est **jamais** dans git. Après tout `git pull` sur le serveur, vérifier qu'il est toujours présent :
+```bash
+ssh moulinettes.fr "cat /home/ubuntu/workspace/polymarket/.env"
+```
