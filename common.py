@@ -24,7 +24,7 @@ SNIPE_AMOUNT  = float(os.getenv("SNIPE_AMOUNT",  "1.0"))    # USDC per trade
 SNIPE_PROB    = float(os.getenv("SNIPE_PROB",   "0.95"))   # midpoint threshold to trigger buy
 SNIPE_TIME    = int(os.getenv("SNIPE_TIME",     "120"))    # only trigger if < 2 min remaining
 RESCUE_TIME          = int(os.getenv("RESCUE_TIME",          "15"))    # rescue window: last N seconds
-RESCUE_OBI_THRESHOLD = float(os.getenv("RESCUE_OBI_THRESHOLD", "0.30"))  # min OBI to trigger rescue
+RESCUE_OBI_THRESHOLD = float(os.getenv("RESCUE_OBI_THRESHOLD", "0.65"))  # min |OBI| to trigger rescue — below 0.60 is microstructure noise (Cont et al. 2014)
 DRY_RUN              = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
 
 # On-chain redemption (Polygon)
