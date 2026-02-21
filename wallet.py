@@ -73,8 +73,8 @@ def run_wallet_mode() -> None:
     except Exception as e:
         sys.exit(f"get_trades failed: {e}")
 
-    # ── Today's trade log ──────────────────────────────────────────────────────
-    today_start = int(time.time()) // 86400 * 86400  # midnight UTC
+    # Filter to today (midnight UTC)
+    today_start = int(time.time()) // 86400 * 86400
 
     def _trade_ts(t) -> float:
         raw = t.get("match_time") or t.get("created_at") or 0
@@ -87,29 +87,13 @@ def run_wallet_mode() -> None:
     today_trades.sort(key=_trade_ts)
 
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    print(f"  today ({today_str} UTC) — {len(today_trades)} trade(s)")
-    if today_trades:
-        print(f"  {'time':>5}  {'outcome':<7}  {'price':>6}  {'tokens':>8}  {'cost':>8}")
-        print("  " + "─" * 44)
-        today_cost = 0.0
-        for t in today_trades:
-            ts      = datetime.fromtimestamp(_trade_ts(t), tz=timezone.utc).strftime("%H:%M")
-            outcome = t.get("outcome", "?")
-            price   = float(t.get("price", 0) or 0)
-            size    = float(t.get("size",  0) or 0)
-            cost    = price * size
-            today_cost += cost
-            print(f"  {ts:>5}  {outcome:<7}  {price:>6.4f}  {size:>8.4f}  {cost:>8.4f}")
-        print(f"  {'':>5}  {'':7}  {'':6}  {'total:':>8}  {today_cost:>8.4f}")
-    print()
 
     if not today_trades:
+        print(f"  today ({today_str} UTC) — no trades\n")
         print(f"  USDC.e balance: {usdc_e_balance(wallet):.4f}\n")
         return
 
     # Aggregate cost and total tokens per (cid, asset_id) — today only
-    # cost = sum(price * size)  — USDC spent
-    # tokens = sum(size)        — outcome tokens acquired (each redeems for 1 USDC if won)
     cost_map   = defaultdict(float)
     tokens_map = defaultdict(float)
     for t in today_trades:
@@ -121,7 +105,7 @@ def run_wallet_mode() -> None:
         cost_map[key]   += price * size
         tokens_map[key] += size
 
-    # Deduplicate by (cid, asset_id) for on-chain queries — today only
+    # Deduplicate by (cid, asset_id) for on-chain queries
     seen, candidates = set(), []
     for t in today_trades:
         key = (t.get("market", ""), t.get("asset_id", ""))
@@ -130,8 +114,10 @@ def run_wallet_mode() -> None:
         seen.add(key)
         candidates.append(t)
 
-    sel_pd = abi_sel("payoutDenominator(bytes32)")
-    rows   = []
+    # On-chain checks — build status_map keyed by (cid, asset_id_str)
+    sel_pd     = abi_sel("payoutDenominator(bytes32)")
+    rows       = []
+    status_map = {}  # (cid, asset_id_str) -> row
 
     print(f"checking {len(candidates)} position(s) on-chain…\n")
 
@@ -139,7 +125,7 @@ def run_wallet_mode() -> None:
         cid      = t["market"]
         asset_id = int(t["asset_id"])
         outcome  = t.get("outcome", "?")
-        key      = (cid, t["asset_id"])  # string key, matches cost_map
+        key      = (cid, t["asset_id"])
 
         try:
             balance = _ctf_balance(wallet, asset_id)
@@ -158,17 +144,16 @@ def run_wallet_mode() -> None:
         cost         = cost_map.get(key, 0.0)
         total_tokens = tokens_map.get(key, 0.0)
 
-        # PnL calculation
         if won is None:
-            pnl = None                              # active — unrealized
+            pnl = None
         elif won and balance > 0:
-            pnl = balance_usdc - cost               # redeemable: current value minus cost
+            pnl = balance_usdc - cost
         elif won and balance == 0:
-            pnl = total_tokens - cost               # redeemed: tokens acquired minus cost
+            pnl = total_tokens - cost
         else:
-            pnl = -cost                             # lost: full loss
+            pnl = -cost
 
-        rows.append({
+        row = {
             "cid":         cid,
             "outcome":     outcome,
             "balance":     balance_usdc,
@@ -177,32 +162,54 @@ def run_wallet_mode() -> None:
             "pnl":         pnl,
             "won":         won,
             "status":      status,
-        })
+        }
+        rows.append(row)
+        status_map[key] = row
 
-    # Sort: redeemable first, then active, then lost, then redeemed
-    _order = {"redeemable ✓": 0, "active": 1, "lost": 2, "redeemed": 3}
-    rows.sort(key=lambda r: _order.get(r["status"], 9))
-
-    # Show: positions with balance, plus lost positions (even if balance=0 after burning)
-    visible = [r for r in rows if r["balance_raw"] > 0 or r["status"] == "lost"]
+    # ── Today's trade log (with result) ───────────────────────────────────────
+    _status_label = {
+        "redeemable ✓": "redeemable",
+        "redeemed":     "win",
+        "lost":         "LOSS",
+        "active":       "active",
+    }
 
     def _pnl_str(pnl: float | None) -> str:
         if pnl is None:
             return "—"
         return f"{pnl:+.4f}"
 
-    if not visible:
-        print("no open positions")
-    else:
-        cid_w = 14
-        print(f"  {'cid':<{cid_w}}  {'outcome':<7}  {'balance':>9}  {'cost':>8}  {'pnl':>9}  status")
-        print("  " + "─" * (cid_w + 52))
-        for r in visible:
-            cid_short = r["cid"][:cid_w - 1] + "…"
-            print(f"  {cid_short:<{cid_w}}  {r['outcome']:<7}  {r['balance']:>9.4f}"
-                  f"  {r['cost']:>8.4f}  {_pnl_str(r['pnl']):>9}  {r['status']}")
+    # Deduplicate for display: one row per (cid, asset_id) in time order
+    seen_display = set()
+    display_trades = []
+    for t in today_trades:
+        key = (t.get("market", ""), t.get("asset_id", ""))
+        if key in seen_display or not all(key):
+            continue
+        seen_display.add(key)
+        display_trades.append(t)
 
-    # Summary counts
+    print(f"  today ({today_str} UTC) — {len(display_trades)} position(s)")
+    print(f"  {'time':>5}  {'outcome':<7}  {'price':>6}  {'tokens':>8}  {'cost':>8}  {'pnl':>9}  result")
+    print("  " + "─" * 62)
+
+    today_cost = 0.0
+    for t in display_trades:
+        ts      = datetime.fromtimestamp(_trade_ts(t), tz=timezone.utc).strftime("%H:%M")
+        outcome = t.get("outcome", "?")
+        key     = (t.get("market", ""), t.get("asset_id", ""))
+        row     = status_map.get(key)
+        price   = float(t.get("price", 0) or 0)
+        size    = float(t.get("size",  0) or 0)
+        cost    = cost_map.get(key, price * size)
+        today_cost += cost
+        pnl_s   = _pnl_str(row["pnl"] if row else None)
+        result  = _status_label.get(row["status"], "?") if row else "?"
+        print(f"  {ts:>5}  {outcome:<7}  {price:>6.4f}  {size:>8.4f}  {cost:>8.4f}  {pnl_s:>9}  {result}")
+
+    print(f"  {'':>5}  {'':7}  {'':6}  {'':8}  {'total:':>8}  {'':9}  {today_cost:>8.4f} USDC spent")
+
+    # Summary
     n_redeemable = sum(1 for r in rows if r["status"] == "redeemable ✓")
     n_active     = sum(1 for r in rows if r["status"] == "active")
     n_lost       = sum(1 for r in rows if r["status"] == "lost")
