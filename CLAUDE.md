@@ -21,33 +21,76 @@ PRIVATE_KEY=<your Polygon wallet private key>
 # Live order book viewer (no auth required)
 python main.py data
 
-# Sniper (requires PRIVATE_KEY in .env)
+# Sniper — production (requires PRIVATE_KEY in .env)
 python main.py snipe
+
+# Sniper — dry run (no PRIVATE_KEY needed, no orders placed)
+python main.py snipe --dry-run
 ```
 
 ## Architecture
 
-Single-file bot (`main.py`) targeting the Polymarket CLOB (Central Limit Order Book) on Polygon. It operates on 5-minute BTC Up/Down binary markets.
+Multi-module bot targeting the Polymarket CLOB (Central Limit Order Book) on Polygon. It operates on 5-minute BTC Up/Down binary markets.
 
-**Two modes:**
+**Modules:**
+
+| Fichier | Rôle |
+|---|---|
+| `main.py` | Point d'entrée CLI (`data`, `snipe`, `wallet`, `redeem`) |
+| `common.py` | Constantes, logging, helpers, clients CLOB, market discovery |
+| `snipe.py` | Sniper + stratégie B (rescue) |
+| `binance_signal.py` | Signal microstructure Binance (OBI + Kalman) |
+| `data.py` | TUI order book viewer |
+| `redeem.py` | Rachat automatique des positions résolues |
+| `wallet.py` | Affichage des positions CTF on-chain |
+| `tests/` | Tests unitaires (pytest) |
+
+**Modes:**
 
 - **`data` mode** — No auth. Uses the Gamma API to discover the current 5-minute market window (slug derived from clock: `btc-updown-5m-<unix_ts_rounded_to_300s>`), then opens a WebSocket to `wss://ws-subscriptions-clob.polymarket.com/ws/market` to stream live order book updates. Renders a terminal UI showing bids/asks for both the Up and Down tokens side-by-side. Automatically rolls over to the next window when the countdown hits zero.
 
-- **`snipe` mode** — Requires auth. Builds an L2 `ClobClient` using `PRIVATE_KEY`, derives API credentials via `create_or_derive_api_creds()`, then monitors each market window via WebSocket. When the midpoint of either the Up or Down token reaches `SNIPE_PROB` (0.95) and fewer than `SNIPE_TIME` (120) seconds remain, fires a FOK market buy for `SNIPE_AMOUNT` (1.0) USDC. Rolls over to new market windows automatically.
+- **`snipe` mode (LIVE)** — Requires auth. Builds an L2 `ClobClient` using `PRIVATE_KEY`, derives API credentials via `create_or_derive_api_creds()`, then monitors each market window via WebSocket. When the midpoint of either the Up or Down token reaches `SNIPE_PROB` (0.95) and fewer than `SNIPE_TIME` (120) seconds remain, fires a FOK market buy for `SNIPE_AMOUNT` (1.0) USDC. Rolls over to new market windows automatically.
 
-**Key constants** (top of file, tune as needed):
+- **`snipe` mode (DRY RUN)** — No auth required. Uses an unauthenticated L1 `ClobClient` for market discovery (GET calls only). Toute la logique de signal et de snipe tourne normalement, mais les ordres (snipe initial + rescue) sont simulés — les logs affichent `[DRY RUN] order skipped`.
+
+**Stratégie B — Rescue (dans `snipe.py`):**
+
+Après qu'un snipe initial est déclenché, `BinancePriceSignal` continue de tourner en background asyncio. Si dans les `RESCUE_TIME` (15s) dernières secondes le signal Binance (`obi`, `direction`) contredit la position ouverte, un ordre FOK d'achat est tiré sur le token opposé (`RESCUE_FILLED` / `RESCUE_NOT_FILLED` / `RESCUE_FAILED`).
+
+**`BinancePriceSignal` (dans `binance_signal.py`):**
+
+Souscrit au Combined Stream public Binance :
+- `btcusdt@depth5@100ms` → **OBI** (Order Book Imbalance) ∈ [-1, 1]
+- `btcusdt@aggTrade` → prix filtré par **Kalman** + **vélocité** (USD/s)
+
+Expose `.obi`, `.price`, `.velocity`, `.direction` (`"UP"` / `"DOWN"` / `None`).
+Tourne en tâche asyncio background — pas de thread séparé.
+
+**Key constants** (`common.py`, overridables via `.env`) :
 - `SNIPE_AMOUNT = 1.0` — USDC per trade
 - `SNIPE_PROB = 0.95` — midpoint threshold to trigger buy
 - `SNIPE_TIME = 120` — only trigger if fewer than this many seconds remain
+- `RESCUE_TIME = 15` — rescue window: last N seconds before close
+- `DRY_RUN = false` — `true` = no orders, no PRIVATE_KEY required
 
 **APIs used:**
 - `https://gamma-api.polymarket.com/events` — market discovery by slug
-- `https://clob.polymarket.com` — CLOB REST (order placement, midpoint, market info)
+- `https://clob.polymarket.com` — CLOB REST (order placement, market info)
 - `wss://ws-subscriptions-clob.polymarket.com/ws/market` — real-time order book feed
+- `wss://stream.binance.com:9443/stream` — Binance combined stream (depth + aggTrade)
 
-**WebSocket message types:**
+**WebSocket message types (Polymarket):**
 - `event_type == "book"` — full book snapshot for a token
 - messages with `"price_changes"` key — incremental book updates (add/remove levels)
+
+## Tests
+
+```bash
+source .venv/bin/activate
+python -m pytest tests/ -v
+```
+
+Couvre : logique OBI, filtre Kalman, vélocité, `direction`, `should_rescue`. Les tests ne touchent pas au réseau — ils appellent directement `_on_depth()` et `_on_trade()`.
 
 ## Wallet setup (one-time, on-chain)
 

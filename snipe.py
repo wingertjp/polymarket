@@ -12,22 +12,39 @@ import os
 import time
 import websockets
 
+from binance_signal import BinancePriceSignal
 from common import (
     WS_URL,
-    SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME,
+    SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME, RESCUE_TIME, DRY_RUN,
     log, log_ws, log_book, log_order,
     configure_logging, fetch_active_market,
     sorted_bids, sorted_asks, compute_mid,
     ClobClient,
-    build_client_l2,
+    build_client_l1, build_client_l2,
 )
 from py_clob_client.clob_types import MarketOrderArgs, OrderType
 from py_clob_client.order_builder.constants import BUY
 
 
+# ── Rescue helper ──────────────────────────────────────────────────────────────
+
+def should_rescue(
+    initial_outcome: str,
+    signal_direction: str | None,
+    remaining: float,
+    rescue_time: float,
+) -> bool:
+    """Return True when Binance signal contradicts our open bet within the rescue window."""
+    if signal_direction is None:
+        return False
+    if remaining > rescue_time:
+        return False
+    return signal_direction.upper() != initial_outcome.upper()
+
+
 # ── Sniper ─────────────────────────────────────────────────────────────────────
 
-async def snipe_market(client: ClobClient, mkt) -> None:
+async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> None:
     """Monitor one market window. Fire FOK buy when mid >= SNIPE_PROB and < SNIPE_TIME remaining."""
     book = {
         "Up":   {"bids": {}, "asks": {}},
@@ -38,6 +55,13 @@ async def snipe_market(client: ClobClient, mkt) -> None:
     book_snapshots    = 0
     price_change_msgs = 0
     fired             = False
+    initial_outcome:  str | None = None   # "Up" or "Down" — what we bought
+    rescue_token_id:  str | None = None   # opposite token to buy on rescue
+    rescued           = False
+
+    signal = BinancePriceSignal()
+    await signal.start()
+    log.info("binance signal started  mode=%s", "DRY RUN" if dry_run else "LIVE")
 
     log.info(
         "watching  %r  end_ts=%s  (~%ds)  trigger: mid>=%.2f AND remaining<%ds",
@@ -137,28 +161,69 @@ async def snipe_market(client: ClobClient, mkt) -> None:
                                     "FIRE  %-4s  mid=%.4f (src=%s) >= %.2f  remaining=%.1fs  amount=%s USDC  token=%s…",
                                     outcome, mid, src, SNIPE_PROB, remaining, SNIPE_AMOUNT, token_id[:16],
                                 )
+                                if dry_run:
+                                    log_order.warning("[DRY RUN] order skipped")
+                                else:
+                                    for attempt in range(1, 4):
+                                        try:
+                                            order = client.create_market_order(
+                                                MarketOrderArgs(token_id=token_id, amount=SNIPE_AMOUNT, side=BUY)
+                                            )
+                                            resp   = client.post_order(order, OrderType.FOK)
+                                            status = resp.get("status", "") if isinstance(resp, dict) else ""
+                                            if status == "matched":
+                                                log_order.critical("FILLED  %-4s  attempt=%d/3  orderID=%s",
+                                                                   outcome, attempt, resp.get("orderID", "?"))
+                                            else:
+                                                log_order.critical("NOT_FILLED  %-4s  attempt=%d/3  status=%s  resp=%s",
+                                                                   outcome, attempt, status or "?", resp)
+                                            break
+                                        except Exception as e:
+                                            log_order.error("order failed (attempt %d/3): %s: %s", attempt, type(e).__name__, e)
+                                            if getattr(e, "status_code", None) == 400:
+                                                break
+                                    else:
+                                        log_order.critical("FAILED  %-4s  all 3 attempts failed", outcome)
+                                fired          = True
+                                initial_outcome = outcome
+                                rescue_token_id = (
+                                    mkt.down_token if outcome == "Up" else mkt.up_token
+                                )
+                                break  # keep watching for rescue
+
+                    if fired and not rescued and updated and remaining < RESCUE_TIME:
+                        if should_rescue(initial_outcome, signal.direction, remaining, RESCUE_TIME):
+                            log_order.critical(
+                                "RESCUE  %s→%s  obi=%.2f  remaining=%.1fs  amount=%s USDC  token=%s…",
+                                initial_outcome, signal.direction, signal.obi,
+                                remaining, SNIPE_AMOUNT, rescue_token_id[:16],
+                            )
+                            if dry_run:
+                                log_order.warning("[DRY RUN] rescue order skipped")
+                            else:
                                 for attempt in range(1, 4):
                                     try:
                                         order = client.create_market_order(
-                                            MarketOrderArgs(token_id=token_id, amount=SNIPE_AMOUNT, side=BUY)
+                                            MarketOrderArgs(token_id=rescue_token_id, amount=SNIPE_AMOUNT, side=BUY)
                                         )
                                         resp   = client.post_order(order, OrderType.FOK)
                                         status = resp.get("status", "") if isinstance(resp, dict) else ""
                                         if status == "matched":
-                                            log_order.critical("FILLED  %-4s  attempt=%d/3  orderID=%s",
-                                                               outcome, attempt, resp.get("orderID", "?"))
+                                            log_order.critical("RESCUE_FILLED  attempt=%d/3  orderID=%s",
+                                                               attempt, resp.get("orderID", "?"))
                                         else:
-                                            log_order.critical("NOT_FILLED  %-4s  attempt=%d/3  status=%s  resp=%s",
-                                                               outcome, attempt, status or "?", resp)
+                                            log_order.critical("RESCUE_NOT_FILLED  attempt=%d/3  status=%s  resp=%s",
+                                                               attempt, status or "?", resp)
                                         break
                                     except Exception as e:
-                                        log_order.error("order failed (attempt %d/3): %s: %s", attempt, type(e).__name__, e)
+                                        log_order.error("rescue order failed (attempt %d/3): %s: %s",
+                                                        attempt, type(e).__name__, e)
                                         if getattr(e, "status_code", None) == 400:
                                             break
                                 else:
-                                    log_order.critical("FAILED  %-4s  all 3 attempts failed", outcome)
-                                fired = True
-                                return
+                                    log_order.critical("RESCUE_FAILED  all 3 attempts failed")
+                            rescued = True
+                            return
 
         except Exception as e:
             remaining = mkt.end_ts - time.time()
@@ -169,11 +234,13 @@ async def snipe_market(client: ClobClient, mkt) -> None:
             await asyncio.sleep(2)
 
 
-def run_snipe_mode(client: ClobClient) -> None:
+def run_snipe_mode(client: ClobClient, *, dry_run: bool = False) -> None:
     last_cid: str | None = None
 
-    log.info("snipe mode started  SNIPE_PROB=%.2f  SNIPE_TIME=%ds  SNIPE_AMOUNT=%s USDC",
-             SNIPE_PROB, SNIPE_TIME, SNIPE_AMOUNT)
+    log.info(
+        "snipe mode started  mode=%s  SNIPE_PROB=%.2f  SNIPE_TIME=%ds  SNIPE_AMOUNT=%s USDC",
+        "DRY RUN" if dry_run else "LIVE", SNIPE_PROB, SNIPE_TIME, SNIPE_AMOUNT,
+    )
 
     while True:
         try:
@@ -186,7 +253,7 @@ def run_snipe_mode(client: ClobClient) -> None:
                     time.sleep(2)
 
             last_cid = mkt.condition_id
-            asyncio.run(snipe_market(client, mkt))
+            asyncio.run(snipe_market(client, mkt, dry_run=dry_run))
 
             remaining = mkt.end_ts - time.time()
             if remaining > 0:

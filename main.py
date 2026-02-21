@@ -16,7 +16,7 @@ Or run modes directly:
 import argparse
 import os
 
-from common import configure_logging
+from common import configure_logging, DRY_RUN
 
 
 def main() -> None:
@@ -28,6 +28,12 @@ def main() -> None:
         metavar="LEVEL",
         help="DEBUG INFO WARNING ERROR CRITICAL (default: INFO, env: LOG_LEVEL)",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=DRY_RUN,
+        help="Simulate snipe/rescue — no orders placed, no PRIVATE_KEY required (env: DRY_RUN=true)",
+    )
     args = parser.parse_args()
 
     if args.mode == "data":
@@ -36,9 +42,13 @@ def main() -> None:
 
     elif args.mode == "snipe":
         configure_logging(args.log_level)
-        from common import build_client_l2
         from snipe import run_snipe_mode
-        run_snipe_mode(build_client_l2())
+        if args.dry_run:
+            from common import build_client_l1
+            run_snipe_mode(build_client_l1(), dry_run=True)
+        else:
+            from common import build_client_l2
+            run_snipe_mode(build_client_l2(), dry_run=False)
 
     elif args.mode == "wallet":
         configure_logging(args.log_level)

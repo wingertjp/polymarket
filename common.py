@@ -20,9 +20,11 @@ WS_URL      = os.getenv("WS_URL",      "wss://ws-subscriptions-clob.polymarket.c
 MARKET_SLUG = os.getenv("MARKET_SLUG", "btc-updown-5m")
 
 # Sniper settings
-SNIPE_AMOUNT = float(os.getenv("SNIPE_AMOUNT", "1.0"))   # USDC per trade
-SNIPE_PROB   = float(os.getenv("SNIPE_PROB",   "0.95"))  # midpoint threshold to trigger buy
-SNIPE_TIME   = int(os.getenv("SNIPE_TIME",     "120"))   # only trigger if < 2 min remaining
+SNIPE_AMOUNT  = float(os.getenv("SNIPE_AMOUNT",  "1.0"))    # USDC per trade
+SNIPE_PROB    = float(os.getenv("SNIPE_PROB",   "0.95"))   # midpoint threshold to trigger buy
+SNIPE_TIME    = int(os.getenv("SNIPE_TIME",     "120"))    # only trigger if < 2 min remaining
+RESCUE_TIME   = int(os.getenv("RESCUE_TIME",    "15"))     # rescue window: last N seconds
+DRY_RUN       = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
 
 # On-chain redemption (Polygon)
 RPC_URL  = os.getenv("RPC_URL", "https://polygon-bor-rpc.publicnode.com")
@@ -215,6 +217,12 @@ def wait_receipt(tx_hash: str, timeout: int = 90) -> dict | None:
             return receipt
         time.sleep(3)
     return None
+
+
+def build_client_l1() -> ClobClient:
+    """Unauthenticated client — GET calls only. No PRIVATE_KEY required."""
+    from py_clob_client.constants import POLYGON
+    return ClobClient(HOST, chain_id=POLYGON)
 
 
 def build_client_l2() -> ClobClient:
