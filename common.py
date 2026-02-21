@@ -14,18 +14,18 @@ load_dotenv()
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-HOST         = "https://clob.polymarket.com"
-GAMMA_API    = "https://gamma-api.polymarket.com"
-WS_URL       = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
-MARKET_SLUG  = "btc-updown-5m"
+HOST        = os.getenv("HOST",        "https://clob.polymarket.com")
+GAMMA_API   = os.getenv("GAMMA_API",   "https://gamma-api.polymarket.com")
+WS_URL      = os.getenv("WS_URL",      "wss://ws-subscriptions-clob.polymarket.com/ws/market")
+MARKET_SLUG = os.getenv("MARKET_SLUG", "btc-updown-5m")
 
 # Sniper settings
-SNIPE_AMOUNT = 1.0   # USDC per trade
-SNIPE_PROB   = 0.95  # midpoint threshold to trigger buy
-SNIPE_TIME   = 120   # only trigger if < 2 min remaining
+SNIPE_AMOUNT = float(os.getenv("SNIPE_AMOUNT", "1.0"))   # USDC per trade
+SNIPE_PROB   = float(os.getenv("SNIPE_PROB",   "0.95"))  # midpoint threshold to trigger buy
+SNIPE_TIME   = int(os.getenv("SNIPE_TIME",     "120"))   # only trigger if < 2 min remaining
 
 # On-chain redemption (Polygon)
-RPC_URL  = "https://polygon-bor-rpc.publicnode.com"
+RPC_URL  = os.getenv("RPC_URL", "https://polygon-bor-rpc.publicnode.com")
 USDC_E   = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 CTF_ADDR = "0x4D97DCd97eC945f40CF65F87097ACe5EA0476045"
 

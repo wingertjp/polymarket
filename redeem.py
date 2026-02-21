@@ -18,7 +18,7 @@ from common import (
     redeem_pending_positions,
 )
 
-POLL_INTERVAL = 10  # seconds between checks
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "10"))  # seconds between checks
 
 
 def run_redeem_mode() -> None:
