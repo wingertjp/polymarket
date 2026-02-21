@@ -15,7 +15,7 @@ import websockets
 from binance_signal import BinancePriceSignal
 from common import (
     WS_URL,
-    SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME, RESCUE_TIME, RESCUE_MID_THRESHOLD, DRY_RUN,
+    SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME, RESCUE_TIME, RESCUE_MID_THRESHOLD, SNIPE_RESCUE_AMOUNT, DRY_RUN,
     log, log_ws, log_book, log_order,
     configure_logging, fetch_active_market,
     sorted_bids, sorted_asks, compute_mid,
@@ -252,7 +252,7 @@ async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> Non
                             log_order.critical(
                                 "RESCUE  %s→%s  mid=%.4f<=%.2f  remaining=%.1fs  amount=%s USDC  token=%s…",
                                 initial_outcome, rescue_outcome, initial_mid, RESCUE_MID_THRESHOLD,
-                                remaining, SNIPE_AMOUNT, rescue_token_id[:16],
+                                remaining, SNIPE_RESCUE_AMOUNT, rescue_token_id[:16],
                             )
                             if dry_run:
                                 log_order.warning("[DRY RUN] rescue order skipped")
@@ -260,7 +260,7 @@ async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> Non
                                 for attempt in range(1, 4):
                                     try:
                                         order = client.create_market_order(
-                                            MarketOrderArgs(token_id=rescue_token_id, amount=SNIPE_AMOUNT, side=BUY)
+                                            MarketOrderArgs(token_id=rescue_token_id, amount=SNIPE_RESCUE_AMOUNT, side=BUY)
                                         )
                                         resp   = client.post_order(order, OrderType.FOK)
                                         status = resp.get("status", "") if isinstance(resp, dict) else ""

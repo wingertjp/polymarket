@@ -25,6 +25,7 @@ SNIPE_PROB    = float(os.getenv("SNIPE_PROB",   "0.95"))   # midpoint threshold 
 SNIPE_TIME    = int(os.getenv("SNIPE_TIME",     "120"))    # only trigger if < 2 min remaining
 RESCUE_TIME          = int(os.getenv("RESCUE_TIME",          "15"))    # rescue window: last N seconds
 RESCUE_MID_THRESHOLD = float(os.getenv("RESCUE_MID_THRESHOLD", "0.80"))  # rescue when initial bet token mid drops below this → rescue token still cheap (~0.20)
+SNIPE_RESCUE_AMOUNT  = float(os.getenv("SNIPE_RESCUE_AMOUNT",  "0.20"))  # USDC for rescue order (smaller to limit whipsaw cost)
 DRY_RUN              = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
 
 # On-chain redemption (Polygon)
