@@ -1,0 +1,14 @@
+services:
+  snipe:
+    build: .
+    command: python snipe.py
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  redeem:
+    build: .
+    command: python redeem.py
+    env_file:
+      - .env
+    restart: unless-stopped
