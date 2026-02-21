@@ -52,6 +52,9 @@ def _build_figure(ticks: list[dict]) -> go.Figure:
     down_mid  = [t.get("down_mid") for t in ticks]
     btc       = [t.get("btc")      for t in ticks]
 
+    # btc_open: use first non-null value across all ticks
+    btc_open = next((t.get("btc_open") for t in ticks if t.get("btc_open")), None)
+
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     fig.add_trace(
@@ -78,6 +81,16 @@ def _build_figure(ticks: list[dict]) -> go.Figure:
         ),
         secondary_y=True,
     )
+    if btc_open is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=[elapsed[0], elapsed[-1]], y=[btc_open, btc_open],
+                name=f"BTC open ({btc_open:,.2f})",
+                line=dict(color="orange", width=1, dash="dot"),
+                mode="lines",
+            ),
+            secondary_y=True,
+        )
 
     fig.update_layout(
         template="plotly_dark",

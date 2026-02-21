@@ -37,11 +37,10 @@ def _recording_path(slug: str) -> Path:
     return RECORDINGS_DIR / f"{ts}_{slug}.jsonl"
 
 
-async def record_market(mkt) -> None:
+async def record_market(signal: BinancePriceSignal, mkt) -> None:
     """Stream one market window, writing JSONL ticks to disk."""
     RECORDINGS_DIR.mkdir(exist_ok=True)
 
-    # Derive slug from end_ts (same logic as common.fetch_active_market)
     window_ts = mkt.end_ts - 300
     slug = f"btc-updown-5m-{window_ts}"
     path = _recording_path(slug)
@@ -57,10 +56,6 @@ async def record_market(mkt) -> None:
     book_snapshots    = 0
     price_change_msgs = 0
     ticks_written     = 0
-
-    signal = BinancePriceSignal()
-    await signal.start()
-    log.info("binance signal started")
 
     sub = {"assets_ids": [mkt.up_token, mkt.down_token], "type": "market", "custom_feature_enabled": True}
 
@@ -131,14 +126,16 @@ async def record_market(mkt) -> None:
                                 "up_mid":    round(up_mid,   4) if up_mid   is not None else None,
                                 "down_mid":  round(down_mid, 4) if down_mid is not None else None,
                                 "btc":       round(signal.price, 2) if signal.price else None,
+                                "btc_open":  round(signal.candle_open, 2) if signal.candle_open else None,
                             }
                             f.write(json.dumps(tick) + "\n")
                             f.flush()
                             ticks_written += 1
 
                             log.debug(
-                                "tick  remaining=%.1fs  up_mid=%s  down_mid=%s  btc=%s",
-                                tick["remaining"], tick["up_mid"], tick["down_mid"], tick["btc"],
+                                "tick  remaining=%.1fs  up_mid=%s  down_mid=%s  btc=%s  btc_open=%s",
+                                tick["remaining"], tick["up_mid"], tick["down_mid"],
+                                tick["btc"], tick["btc_open"],
                             )
 
             except Exception as e:
@@ -149,44 +146,53 @@ async def record_market(mkt) -> None:
                                type(e).__name__, e, remaining)
                 await asyncio.sleep(2)
 
-    await signal.stop()
     log.info(
         "window done  ticks=%d  msgs=%d (snapshots=%d updates=%d)  file=%s",
         ticks_written, msg_count, book_snapshots, price_change_msgs, path.name,
     )
 
 
-def run_record_mode() -> None:
-    client: ClobClient = build_client_l1()
+async def _record_loop(client: ClobClient) -> None:
+    signal = BinancePriceSignal()
+    await signal.start()
+    log.info("binance signal started — WS will stay open across windows")
+
     last_cid: str | None = None
+    try:
+        while True:
+            try:
+                while True:
+                    try:
+                        mkt = fetch_active_market(client, exclude_cid=last_cid)
+                        break
+                    except RuntimeError as e:
+                        log.warning("%s — retrying in 2s …", e)
+                        await asyncio.sleep(2)
 
+                last_cid = mkt.condition_id
+                await record_market(signal, mkt)
+
+                remaining = mkt.end_ts - time.time()
+                if remaining > 0:
+                    log.info("window not yet expired — waiting %.0fs for next window", remaining)
+                    await asyncio.sleep(remaining)
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.error("unexpected error: %s: %s — retrying in 2s", type(e).__name__, e)
+                last_cid = None
+                await asyncio.sleep(2)
+    finally:
+        await signal.stop()
+
+
+def run_record_mode() -> None:
     log.info("record mode started")
-
-    while True:
-        try:
-            while True:
-                try:
-                    mkt = fetch_active_market(client, exclude_cid=last_cid)
-                    break
-                except RuntimeError as e:
-                    log.warning("%s — retrying in 2s …", e)
-                    time.sleep(2)
-
-            last_cid = mkt.condition_id
-            asyncio.run(record_market(mkt))
-
-            remaining = mkt.end_ts - time.time()
-            if remaining > 0:
-                log.info("window not yet expired — waiting %.0fs for next window", remaining)
-                time.sleep(remaining)
-
-        except KeyboardInterrupt:
-            log.info("stopped by user")
-            break
-        except Exception as e:
-            log.error("unexpected error: %s: %s — retrying in 2s", type(e).__name__, e)
-            last_cid = None
-            time.sleep(2)
+    try:
+        asyncio.run(_record_loop(build_client_l1()))
+    except KeyboardInterrupt:
+        log.info("stopped by user")
 
 
 if __name__ == "__main__":
