@@ -29,8 +29,8 @@ DRY_RUN              = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "y
 
 # On-chain redemption (Polygon)
 RPC_URL  = os.getenv("RPC_URL", "https://polygon-bor-rpc.publicnode.com")
-USDC_E   = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
-CTF_ADDR = "0x4D97DCd97eC945f40CF65F87097ACe5EA0476045"
+USDC_E   = os.getenv("USDC_E",   "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
+CTF_ADDR = os.getenv("CTF_ADDR", "0x4D97DCd97eC945f40CF65F87097ACe5EA0476045")
 
 
 # ── Logging ────────────────────────────────────────────────────────────────────
