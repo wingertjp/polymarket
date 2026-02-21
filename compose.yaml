@@ -4,6 +4,7 @@ services:
     command: python snipe.py
     env_file:
       - .env
+    network_mode: host
     restart: unless-stopped
 
   redeem:
@@ -11,4 +12,5 @@ services:
     command: python redeem.py
     env_file:
       - .env
+    network_mode: host
     restart: unless-stopped
