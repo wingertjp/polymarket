@@ -145,10 +145,10 @@ async def snipe_market(client: ClobClient, mkt) -> None:
                                         resp   = client.post_order(order, OrderType.FOK)
                                         status = resp.get("status", "") if isinstance(resp, dict) else ""
                                         if status == "matched":
-                                            log_order.critical("WIN  %-4s  filled  attempt=%d/3  orderID=%s",
+                                            log_order.critical("FILLED  %-4s  attempt=%d/3  orderID=%s",
                                                                outcome, attempt, resp.get("orderID", "?"))
                                         else:
-                                            log_order.critical("LOSS  %-4s  not filled  attempt=%d/3  status=%s  resp=%s",
+                                            log_order.critical("NOT_FILLED  %-4s  attempt=%d/3  status=%s  resp=%s",
                                                                outcome, attempt, status or "?", resp)
                                         break
                                     except Exception as e:
@@ -156,7 +156,7 @@ async def snipe_market(client: ClobClient, mkt) -> None:
                                         if getattr(e, "status_code", None) == 400:
                                             break
                                 else:
-                                    log_order.critical("LOSS  %-4s  all 3 attempts failed", outcome)
+                                    log_order.critical("FAILED  %-4s  all 3 attempts failed", outcome)
                                 fired = True
                                 return
 
