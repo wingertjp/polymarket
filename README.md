@@ -14,15 +14,15 @@ Streams real-time bids and asks for both Up and Down tokens side-by-side in the 
 ```bash
 python main.py snipe --dry-run
 ```
-Full signal and snipe logic runs — Polymarket order book + Binance microstructure signal — but orders are simulated. Useful for validating strategy before risking real funds.
+Full signal and snipe logic runs — Polymarket order book + Binance microstructure signal — but orders are simulated. Reports WIN/LOSS outcome at window close based on BTC candle open vs close.
 
 **Sniper — production** (requires wallet):
 ```bash
 python main.py snipe
 ```
-Monitors each 5-minute market via WebSocket. When the midpoint of either the Up or Down token reaches 0.95 and less than 2 minutes remain, fires a FOK market buy for 1 USDC.
+Monitors each 5-minute market via WebSocket. When the midpoint of either the Up or Down token reaches `SNIPE_PROB` and fewer than `SNIPE_TIME` seconds remain, fires a FOK market buy for `SNIPE_AMOUNT` USDC.
 
-Additionally monitors the Binance BTC/USDT order book for rescue signals (Strategy B): if the Binance order book imbalance strongly contradicts the open bet in the last 15 seconds, fires a FOK buy on the opposite token.
+After a snipe, monitors the Polymarket mid of the initial bet token. If it drops below `RESCUE_MID_THRESHOLD` (meaning the market has reversed), fires a FOK buy on the opposite token for `SNIPE_RESCUE_AMOUNT` USDC.
 
 ## Setup
 
@@ -41,12 +41,32 @@ PRIVATE_KEY=<your Polygon wallet private key>
 
 ## Configuration
 
-All constants are in `common.py` and can be overridden via `.env` or environment variables:
+All constants live in `common.py` and can be overridden via `.env` or environment variables:
+
+### Sniper
 
 | Variable | Default | Description |
 |---|---|---|
-| `SNIPE_AMOUNT` | `1.0` | USDC per trade |
-| `SNIPE_PROB` | `0.95` | Midpoint threshold to trigger buy |
-| `SNIPE_TIME` | `120` | Only trigger if fewer than this many seconds remain |
-| `RESCUE_TIME` | `15` | Rescue window: last N seconds before market close |
-| `DRY_RUN` | `false` | Set to `true` to simulate orders without PRIVATE_KEY |
+| `SNIPE_AMOUNT` | `1.0` | USDC per snipe order |
+| `SNIPE_PROB` | `0.95` | Midpoint threshold to trigger a snipe |
+| `SNIPE_TIME` | `120` | Only snipe if fewer than this many seconds remain |
+| `SNIPE_RESCUE_AMOUNT` | `0.20` | USDC per rescue order |
+| `RESCUE_MID_THRESHOLD` | `0.80` | Rescue fires when the initial bet token mid drops below this (opposite token still cheap at ~0.20) |
+| `DRY_RUN` | `false` | Simulate orders without placing them (no `PRIVATE_KEY` needed) |
+
+### Market
+
+| Variable | Default | Description |
+|---|---|---|
+| `MARKET_SLUG` | `btc-updown-5m` | Polymarket market slug prefix |
+| `HOST` | `https://clob.polymarket.com` | Polymarket CLOB REST endpoint |
+| `GAMMA_API` | `https://gamma-api.polymarket.com` | Polymarket Gamma API endpoint |
+| `WS_URL` | `wss://ws-subscriptions-clob.polymarket.com/ws/market` | Polymarket order book WebSocket |
+
+### On-chain (Polygon)
+
+| Variable | Default | Description |
+|---|---|---|
+| `RPC_URL` | `https://polygon-bor-rpc.publicnode.com` | Polygon JSON-RPC endpoint |
+| `USDC_E` | `0x2791…` | Bridged USDC.e contract address |
+| `CTF_ADDR` | `0x4D97…` | Gnosis CTF contract address (for redemptions) |
