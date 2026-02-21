@@ -273,6 +273,8 @@ async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> Non
                                 else:
                                     log_order.critical("RESCUE_FAILED  all 3 attempts failed")
                             rescued = True
+                            if dry_run:
+                                _log_dry_run_outcome(initial_outcome, rescued, signal)
                             return
 
         except Exception as e:
