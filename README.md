@@ -52,7 +52,7 @@ All constants live in `common.py` and can be overridden via `.env` or environmen
 | `SNIPE_TIME` | `120` | Only snipe if fewer than this many seconds remain |
 | `SNIPE_RESCUE_AMOUNT` | `0.20` | USDC per rescue order |
 | `RESCUE_MID_THRESHOLD` | `0.80` | Rescue fires when the initial bet token mid drops below this (opposite token still cheap at ~0.20) |
-| `DRY_RUN` | `false` | Simulate orders without placing them (no `PRIVATE_KEY` needed) |
+| `DRY_RUN` | `true` | Simulate orders without placing them (no `PRIVATE_KEY` needed) |
 
 ### Market
 
