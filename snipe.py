@@ -19,7 +19,7 @@ from common import (
     configure_logging, fetch_active_market,
     sorted_bids, sorted_asks, compute_mid,
     ClobClient,
-    build_client_l2, redeem_pending_positions,
+    build_client_l2,
 )
 from py_clob_client.clob_types import MarketOrderArgs, OrderType
 from py_clob_client.order_builder.constants import BUY
@@ -170,13 +170,10 @@ async def snipe_market(client: ClobClient, mkt) -> None:
 
 
 def run_snipe_mode(client: ClobClient) -> None:
-    private_key = os.getenv("PRIVATE_KEY")
     last_cid: str | None = None
 
     log.info("snipe mode started  SNIPE_PROB=%.2f  SNIPE_TIME=%ds  SNIPE_AMOUNT=%s USDC",
              SNIPE_PROB, SNIPE_TIME, SNIPE_AMOUNT)
-
-    redeem_pending_positions(client, private_key)
 
     while True:
         try:
@@ -195,8 +192,6 @@ def run_snipe_mode(client: ClobClient) -> None:
             if remaining > 0:
                 log.info("window not yet expired — waiting %.0fs for next window", remaining)
                 time.sleep(remaining)
-
-            redeem_pending_positions(client, private_key)
 
         except KeyboardInterrupt:
             log.info("stopped by user")
