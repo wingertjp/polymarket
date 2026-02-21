@@ -5,12 +5,16 @@ Polymarket BTC Up/Down 5-minute bot.
   python main.py snipe [--log-level LEVEL]   -- sniper (requires PRIVATE_KEY in .env)
   python main.py wallet [--log-level LEVEL]  -- list on-chain CTF positions
   python main.py redeem [--log-level LEVEL]  -- auto-redeem resolved positions (polls every 10s)
+  python main.py record [--log-level LEVEL]  -- stream + record ticks to recordings/*.jsonl
+  python main.py chart                       -- interactive chart browser (localhost:8050)
 
 Or run modes directly:
   python data.py
   python snipe.py [--log-level LEVEL]
   python wallet.py [--log-level LEVEL]
   python redeem.py [--log-level LEVEL]
+  python record.py [--log-level LEVEL]
+  python chart.py
 """
 
 import argparse
@@ -21,7 +25,7 @@ from common import configure_logging, DRY_RUN
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Polymarket BTC Up/Down bot")
-    parser.add_argument("mode", choices=["data", "snipe", "wallet", "redeem"])
+    parser.add_argument("mode", choices=["data", "snipe", "wallet", "redeem", "record", "chart"])
     parser.add_argument(
         "--log-level",
         default=os.getenv("LOG_LEVEL", "INFO"),
@@ -59,6 +63,15 @@ def main() -> None:
         configure_logging(args.log_level)
         from redeem import run_redeem_mode
         run_redeem_mode()
+
+    elif args.mode == "record":
+        configure_logging(args.log_level)
+        from record import run_record_mode
+        run_record_mode()
+
+    elif args.mode == "chart":
+        from chart import run_chart_mode
+        run_chart_mode()
 
 
 if __name__ == "__main__":
