@@ -6,35 +6,19 @@ from snipe import should_rescue, _bet_result
 # ── Rescue (Polymarket mid-based) ────────────────────────────────────────────
 
 def test_rescue_fires_when_initial_mid_drops_below_threshold():
-    # Bet Up at 0.95, mid collapses to 0.15 → market reversed
-    assert should_rescue(initial_mid=0.15, remaining=10.0,
-                         rescue_time=15.0, rescue_mid_threshold=0.20) is True
+    assert should_rescue(initial_mid=0.15, rescue_mid_threshold=0.20) is True
 
 
 def test_no_rescue_when_initial_mid_stays_above_threshold():
-    # Mid still at 0.60 → no strong reversal
-    assert should_rescue(initial_mid=0.60, remaining=10.0,
-                         rescue_time=15.0, rescue_mid_threshold=0.20) is False
-
-
-def test_no_rescue_when_too_much_time_remaining():
-    assert should_rescue(initial_mid=0.10, remaining=20.0,
-                         rescue_time=15.0, rescue_mid_threshold=0.20) is False
-
-
-def test_rescue_fires_exactly_at_time_boundary():
-    assert should_rescue(initial_mid=0.15, remaining=15.0,
-                         rescue_time=15.0, rescue_mid_threshold=0.20) is True
+    assert should_rescue(initial_mid=0.60, rescue_mid_threshold=0.20) is False
 
 
 def test_rescue_fires_exactly_at_mid_threshold():
-    assert should_rescue(initial_mid=0.20, remaining=10.0,
-                         rescue_time=15.0, rescue_mid_threshold=0.20) is True
+    assert should_rescue(initial_mid=0.20, rescue_mid_threshold=0.20) is True
 
 
 def test_no_rescue_when_mid_just_above_threshold():
-    assert should_rescue(initial_mid=0.21, remaining=10.0,
-                         rescue_time=15.0, rescue_mid_threshold=0.20) is False
+    assert should_rescue(initial_mid=0.21, rescue_mid_threshold=0.20) is False
 
 
 # ── Bet result ───────────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ import websockets
 from binance_signal import BinancePriceSignal
 from common import (
     WS_URL,
-    SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME, RESCUE_TIME, RESCUE_MID_THRESHOLD, SNIPE_RESCUE_AMOUNT, DRY_RUN,
+    SNIPE_AMOUNT, SNIPE_PROB, SNIPE_TIME, RESCUE_MID_THRESHOLD, SNIPE_RESCUE_AMOUNT, DRY_RUN,
     log, log_ws, log_book, log_order,
     configure_logging, fetch_active_market,
     sorted_bids, sorted_asks, compute_mid,
@@ -72,15 +72,8 @@ def _log_dry_run_outcome(
 
 # ── Rescue helper ──────────────────────────────────────────────────────────────
 
-def should_rescue(
-    initial_mid: float,
-    remaining: float,
-    rescue_time: float,
-    rescue_mid_threshold: float,
-) -> bool:
+def should_rescue(initial_mid: float, rescue_mid_threshold: float) -> bool:
     """Return True when Polymarket mid of the initial bet token has collapsed below threshold."""
-    if remaining > rescue_time:
-        return False
     return initial_mid <= rescue_mid_threshold
 
 
@@ -239,7 +232,7 @@ async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> Non
                                 )
                                 break  # keep watching for rescue
 
-                    if fired and not rescued and updated and remaining < RESCUE_TIME:
+                    if fired and not rescued and updated:
                         _ib = sorted_bids(book[initial_outcome]["bids"])
                         _ia = sorted_asks(book[initial_outcome]["asks"])
                         _cb = sorted_bids(book["Down" if initial_outcome == "Up" else "Up"]["bids"])
@@ -247,7 +240,7 @@ async def snipe_market(client: ClobClient, mkt, *, dry_run: bool = False) -> Non
                         initial_mid, _ = compute_mid(_ib, _ia, _cb, _ca)
                         rescue_outcome  = "Down" if initial_outcome == "Up" else "Up"
                         if initial_mid is not None and should_rescue(
-                            initial_mid, remaining, RESCUE_TIME, RESCUE_MID_THRESHOLD
+                            initial_mid, RESCUE_MID_THRESHOLD
                         ):
                             log_order.critical(
                                 "RESCUE  %s→%s  mid=%.4f<=%.2f  remaining=%.1fs  amount=%s USDC  token=%s…",
